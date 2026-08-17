@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
+const mongoose = require('mongoose');
 
 // Load environment variables
 dotenv.config();
@@ -27,24 +28,63 @@ connectDB();
 
 // Security & Parsing Middleware
 app.use(helmet());
+
+// Dynamic CORS Configuration
+// CORS Configuration
+const allowedOrigins = [
+  'https://quickkart-six.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173'
+];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Allow requests with no origin
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow production site
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow QuickKart Vercel preview/deployment URLs
+      if (
+        origin.startsWith('https://quickkart-') &&
+        origin.endsWith('.vercel.app')
+      ) {
+        return callback(null, true);
+      }
+
+      console.log('❌ CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS policy'));
+    },
     credentials: true
   })
 );
-app.use(morgan('dev'));
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Health Check Endpoints
 const healthHandler = (req, res) => {
+  const isDbConnected = mongoose.connection.readyState === 1;
   res.status(200).json({
     success: true,
     message: 'QuickKart API is running',
     version: '1.0.0',
-    database: 'connected',
+    environment: process.env.NODE_ENV || 'development',
+    database: isDbConnected ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
 };
@@ -67,7 +107,7 @@ const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
   console.log(`🚀 QuickKart Express Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-  console.log(`🔗 Health Check: http://localhost:${PORT}/api/health`);
+  console.log(`🔗 Health Check: /api/v1/health`);
 });
 
 module.exports = app;
